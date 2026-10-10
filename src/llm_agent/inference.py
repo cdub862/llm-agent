@@ -24,9 +24,14 @@ model = AutoModelForCausalLM.from_pretrained(
 model.eval()
 
 
-def generate(messages: list[dict], max_new_tokens: int = 100) -> dict:
+def generate(
+    messages: list[dict],
+    max_new_tokens: int = 100,
+    tools: list[dict] | None = None,
+) -> dict:
     inputs = tokenizer.apply_chat_template(
         messages,
+        tools=tools,
         tokenize=True,
         add_generation_prompt=True,
         return_dict=True,
@@ -62,3 +67,38 @@ def generate(messages: list[dict], max_new_tokens: int = 100) -> dict:
         "completion_tokens": len(generated_tokens),
         "finish_reason": "stop" if finished else "length",
     }
+
+
+if __name__ == "__main__":
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "create_customer",
+                "description": "Create a customer record.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "email": {"type": "string"},
+                    },
+                    "required": ["name", "email"],
+                },
+            },
+        }
+    ]
+
+    result = generate(
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "Create a customer named Alice with email alice@example.com."
+                ),
+            }
+        ],
+        tools=tools,
+        max_new_tokens=150,
+    )
+
+    print(result["content"])
