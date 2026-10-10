@@ -1,0 +1,33 @@
+[project]
+name = "llm-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Carlos Dubus", email = "carlos.garciadm@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "accelerate>=1.15.0",
+    "bitsandbytes>=0.50.2",
+    "fastapi>=0.143.0",
+    "openai>=2.54.0",
+    "torch>=2.14.1",
+    "transformers>=5.19.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+llm-agent = "llm_agent:main"
+
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cu126"
+
+[build-system]
+requires = ["uv_build>=0.12.24,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17.0",
+]
