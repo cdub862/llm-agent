@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 
 
 def parse_tool_call(content: str) -> dict | None:
@@ -27,3 +28,14 @@ def parse_tool_call(content: str) -> dict | None:
         raise TypeError("Tool arguments must be an object")
 
     return data
+
+
+def to_openai_tool_call(parsed: dict) -> dict:
+    return {
+        "id": f"call_{uuid.uuid4().hex}",
+        "type": "function",
+        "function": {
+            "name": parsed["name"],
+            "arguments": json.dumps(parsed["arguments"]),
+        },
+    }

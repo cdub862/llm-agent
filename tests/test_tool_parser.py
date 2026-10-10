@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from llm_agent.tool_parser import parse_tool_call
+from llm_agent.tool_parser import parse_tool_call, to_openai_tool_call
 
 
 def test_parse_valid_tool_call():
@@ -66,3 +66,23 @@ def test_parse_empty_function_name(name):
 
     with pytest.raises(ValueError):
         parse_tool_call(content)
+
+
+def test_convert_to_openai_tool_call():
+    parsed = {
+        "name": "add_entry",
+        "arguments": {
+            "date": "2026-10-10",
+            "description": "Oatmeal",
+            "calories": 300,
+            "category": "grains",
+            "tags": ["breakfast"],
+        },
+    }
+
+    result = to_openai_tool_call(parsed)
+
+    assert result["id"].startswith("call_")
+    assert result["type"] == "function"
+    assert result["function"]["name"] == "add_entry"
+    assert json.loads(result["function"]["arguments"]) == parsed["arguments"]
