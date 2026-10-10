@@ -5,11 +5,13 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException
+from jsonschema import ValidationError
 from pydantic import BaseModel, Field
 
 from llm_agent.config import MODEL_ID
 from llm_agent.inference import generate
 from llm_agent.tool_parser import parse_tool_call, to_openai_tool_call
+from llm_agent.tool_validator import validate_tool_call
 
 app = FastAPI()
 
@@ -58,17 +60,13 @@ def create_chat_completion(request: ChatCompletionRequest):
         parsed = parse_tool_call(result["content"])
 
     if parsed is not None:
-        allowed_names = {
-            tool.get("function", {}).get("name")
-            for tool in request.tools or []
-            if tool.get("type") == "function"
-        }
-
-        if parsed["name"] not in allowed_names:
+        try:
+            validate_tool_call(parsed, request.tools)
+        except (ValueError, ValidationError) as exc:
             raise HTTPException(
                 status_code=502,
-                detail="Model generated an unknown tool call",
-            )
+                detail=f"Invalid model-generated tool call: {exc.message if isinstance(exc, ValidationError) else str(exc)}",
+            ) from exc
 
         message = {
             "role": "assistant",

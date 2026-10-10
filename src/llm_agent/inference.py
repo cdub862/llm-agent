@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import torch
 from transformers import (
     AutoModelForCausalLM,
@@ -7,21 +9,26 @@ from transformers import (
 
 from llm_agent.config import MODEL_ID
 
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.float16,
-)
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+@lru_cache(maxsize=1)
+def load_model():
+    quantization_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16,
+    )
 
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_ID,
-    quantization_config=quantization_config,
-    device_map="auto",
-)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
-model.eval()
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_ID,
+        quantization_config=quantization_config,
+        device_map="auto",
+    )
+
+    model.eval()
+
+    return tokenizer, model
 
 
 def generate(
@@ -29,6 +36,7 @@ def generate(
     max_new_tokens: int = 100,
     tools: list[dict] | None = None,
 ) -> dict:
+    tokenizer, model = load_model()
     inputs = tokenizer.apply_chat_template(
         messages,
         tools=tools,
