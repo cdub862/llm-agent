@@ -1,12 +1,15 @@
 import time
 import uuid
+from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from llm_agent.config import MODEL_ID
 from llm_agent.inference import generate
+from llm_agent.tool_parser import parse_tool_call, to_openai_tool_call
 
 app = FastAPI()
 
@@ -20,6 +23,7 @@ class ChatCompletionRequest(BaseModel):
     model: str
     messages: list[Message] = Field(min_length=1)
     max_completion_tokens: int = Field(default=100, ge=1, le=512)
+    tools: list[dict] | None = None
 
 
 @app.post("/v1/chat/completions")
@@ -27,10 +31,57 @@ def create_chat_completion(request: ChatCompletionRequest):
     if request.model != MODEL_ID:
         raise HTTPException(status_code=404, detail="Model not found")
 
+    today = datetime.now(ZoneInfo("America/Santo_Domingo")).date().isoformat()
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"Current date: {today}. "
+                "When logging food, use the current date unless "
+                "the user specifies another date. "
+                "Resolve relative dates such as yesterday."
+            ),
+        },
+        *[message.model_dump() for message in request.messages],
+    ]
+
     result = generate(
-        messages=[message.model_dump() for message in request.messages],
+        messages=messages,
         max_new_tokens=request.max_completion_tokens,
+        tools=request.tools,
     )
+
+    parsed = None
+
+    if request.tools and result["finish_reason"] == "stop":
+        parsed = parse_tool_call(result["content"])
+
+    if parsed is not None:
+        allowed_names = {
+            tool.get("function", {}).get("name")
+            for tool in request.tools or []
+            if tool.get("type") == "function"
+        }
+
+        if parsed["name"] not in allowed_names:
+            raise HTTPException(
+                status_code=502,
+                detail="Model generated an unknown tool call",
+            )
+
+        message = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [to_openai_tool_call(parsed)],
+        }
+        finish_reason = "tool_calls"
+    else:
+        message = {
+            "role": "assistant",
+            "content": result["content"],
+        }
+        finish_reason = result["finish_reason"]
 
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
@@ -40,11 +91,8 @@ def create_chat_completion(request: ChatCompletionRequest):
         "choices": [
             {
                 "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": result["content"],
-                },
-                "finish_reason": result["finish_reason"],
+                "message": message,
+                "finish_reason": finish_reason,
             }
         ],
         "usage": {
