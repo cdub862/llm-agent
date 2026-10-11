@@ -17,8 +17,10 @@ app = FastAPI()
 
 
 class Message(BaseModel):
-    role: Literal["system", "user", "assistant"]
-    content: str
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str | None = None
+    tool_calls: list[dict] | None = None
+    tool_call_id: str | None = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -45,7 +47,7 @@ def create_chat_completion(request: ChatCompletionRequest):
                 "Resolve relative dates such as yesterday."
             ),
         },
-        *[message.model_dump() for message in request.messages],
+        *[message.model_dump(exclude_unset=True) for message in request.messages],
     ]
 
     result = generate(

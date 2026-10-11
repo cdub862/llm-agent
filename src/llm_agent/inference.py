@@ -1,3 +1,5 @@
+import json
+from copy import deepcopy
 from functools import lru_cache
 
 import torch
@@ -31,6 +33,20 @@ def load_model():
     return tokenizer, model
 
 
+def prepare_model_messages(messages: list[dict]) -> list[dict]:
+    prepared = deepcopy(messages)
+
+    for message in prepared:
+        for call in message.get("tool_calls") or []:
+            function = call["function"]
+            arguments = function["arguments"]
+
+            if isinstance(arguments, str):
+                function["arguments"] = json.loads(arguments)
+
+    return prepared
+
+
 def generate(
     messages: list[dict],
     max_new_tokens: int = 100,
@@ -38,7 +54,7 @@ def generate(
 ) -> dict:
     tokenizer, model = load_model()
     inputs = tokenizer.apply_chat_template(
-        messages,
+        prepare_model_messages(messages),
         tools=tools,
         tokenize=True,
         add_generation_prompt=True,
@@ -75,38 +91,3 @@ def generate(
         "completion_tokens": len(generated_tokens),
         "finish_reason": "stop" if finished else "length",
     }
-
-
-if __name__ == "__main__":
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "create_customer",
-                "description": "Create a customer record.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "email": {"type": "string"},
-                    },
-                    "required": ["name", "email"],
-                },
-            },
-        }
-    ]
-
-    result = generate(
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "Create a customer named Alice with email alice@example.com."
-                ),
-            }
-        ],
-        tools=tools,
-        max_new_tokens=150,
-    )
-
-    print(result["content"])
