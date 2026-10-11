@@ -1,4 +1,5 @@
 import json
+from datetime import date as Date
 from pathlib import Path
 from uuid import uuid4
 
@@ -38,3 +39,39 @@ def add_entry(
         temp_path.unlink(missing_ok=True)
 
     return record
+
+
+def list_entries(
+    *,
+    start_date: Date | None = None,
+    end_date: Date | None = None,
+    data_dir: Path = Path("data"),
+) -> list[dict]:
+    if start_date and end_date and start_date > end_date:
+        raise ValueError("start_date cannot be after end_date")
+
+    entries = []
+
+    for path in sorted(data_dir.glob("????-??.json")):
+        month = path.stem
+
+        if start_date and month < start_date.strftime("%Y-%m"):
+            continue
+
+        if end_date and month > end_date.strftime("%Y-%m"):
+            continue
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+
+        for entry in data["entries"]:
+            entry_date = Date.fromisoformat(entry["date"])
+
+            if start_date and entry_date < start_date:
+                continue
+
+            if end_date and entry_date > end_date:
+                continue
+
+            entries.append(entry)
+
+    return sorted(entries, key=lambda entry: entry["date"])

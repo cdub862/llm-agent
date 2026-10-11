@@ -1,10 +1,34 @@
 import json
+from datetime import date
 
 import pytest
 from pydantic import ValidationError
 
 from llm_agent.schemas import EntryInput
-from llm_agent.storage import add_entry
+from llm_agent.storage import add_entry, list_entries
+
+
+@pytest.fixture
+def sample_entries(tmp_path):
+    records = []
+
+    for entry_date, description in [
+        ("2026-09-30", "Oatmeal"),
+        ("2026-10-01", "Sandwich"),
+        ("2026-10-05", "Pizza"),
+        ("2026-10-11", "Salad"),
+    ]:
+        entry = EntryInput(
+            date=entry_date,
+            description=description,
+            calories=300,
+            category="other",
+            tags=[],
+        )
+
+        records.append(add_entry(entry, data_dir=tmp_path))
+
+    return records
 
 
 def test_add_entry_creates_monthly_file(tmp_path):
@@ -89,3 +113,59 @@ def test_add_entry_rejects_invalid_data(tmp_path, field, value):
         add_entry(entry, data_dir=tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_list_entries_empty_directory(tmp_path):
+    assert list_entries(data_dir=tmp_path) == []
+
+
+def test_list_entries_all_months(tmp_path, sample_entries):
+    result = list_entries(data_dir=tmp_path)
+
+    assert result == sample_entries
+
+
+def test_list_entries_date_range(tmp_path, sample_entries):
+    result = list_entries(
+        start_date=date(2026, 10, 1),
+        end_date=date(2026, 10, 5),
+        data_dir=tmp_path,
+    )
+
+    assert [entry["description"] for entry in result] == [
+        "Sandwich",
+        "Pizza",
+    ]
+
+
+def test_list_entries_start_date_only(tmp_path, sample_entries):
+    result = list_entries(
+        start_date=date(2026, 10, 5),
+        data_dir=tmp_path,
+    )
+
+    assert [entry["description"] for entry in result] == [
+        "Pizza",
+        "Salad",
+    ]
+
+
+def test_list_entries_end_date_only(tmp_path, sample_entries):
+    result = list_entries(
+        end_date=date(2026, 10, 1),
+        data_dir=tmp_path,
+    )
+
+    assert [entry["description"] for entry in result] == [
+        "Oatmeal",
+        "Sandwich",
+    ]
+
+
+def test_list_entries_invalid_date_range(tmp_path):
+    with pytest.raises(ValueError, match="start_date"):
+        list_entries(
+            start_date=date(2026, 10, 11),
+            end_date=date(2026, 10, 1),
+            data_dir=tmp_path,
+        )
