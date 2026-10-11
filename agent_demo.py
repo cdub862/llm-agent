@@ -1,28 +1,7 @@
 from openai import OpenAI
 
 from llm_agent.agent import run_agent
-
-
-def get_daily_total(date: str) -> dict:
-    return {"date": date, "total_calories": 300}
-
-
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_daily_total",
-            "description": "Get the total logged calories for a date.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "date": {"type": "string"},
-                },
-                "required": ["date"],
-            },
-        },
-    }
-]
+from llm_agent.tools import ADD_ENTRY_TOOL, add_entry_tool
 
 client = OpenAI(
     base_url="http://127.0.0.1:8000/v1",
@@ -34,11 +13,11 @@ answer = run_agent(
     messages=[
         {
             "role": "user",
-            "content": "How many calories did I log on 2026-10-10?",
-        }
+            "content": "Add 50 calories: kitkat",
+        },
     ],
-    tools=tools,
-    handlers={"get_daily_total": get_daily_total},
+    tools=[ADD_ENTRY_TOOL],
+    handlers={"add_entry": add_entry_tool},
 )
 
 print(answer)
