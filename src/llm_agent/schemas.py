@@ -1,7 +1,7 @@
 from datetime import date as Date
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FoodCategory(StrEnum):
@@ -18,6 +18,8 @@ class FoodCategory(StrEnum):
 
 
 class EntryInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     date: Date
     description: str = Field(min_length=1)
     calories: int = Field(ge=0, strict=True)
