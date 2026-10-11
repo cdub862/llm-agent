@@ -8,6 +8,7 @@ from llm_agent.schemas import EntryInput, EntryUpdate
 from llm_agent.storage import (
     add_entry,
     delete_entry,
+    get_calorie_summary,
     list_entries,
     update_entry,
 )
@@ -344,3 +345,88 @@ def test_delete_entry_does_not_modify_other_months(tmp_path):
     delete_entry(october["id"], data_dir=tmp_path)
 
     assert list_entries(data_dir=tmp_path) == [september]
+
+
+def test_calorie_summary_across_months(tmp_path, sample_entries):
+    summary = get_calorie_summary(
+        start_date=date(2026, 9, 30),
+        end_date=date(2026, 10, 5),
+        data_dir=tmp_path,
+    )
+
+    assert summary["total_calories"] == 900
+    assert summary["average_daily_calories"] == 150
+    assert summary["by_category"] == {"other": 900}
+
+    assert summary["daily_totals"] == {
+        "2026-09-30": 300,
+        "2026-10-01": 300,
+        "2026-10-02": 0,
+        "2026-10-03": 0,
+        "2026-10-04": 0,
+        "2026-10-05": 300,
+    }
+
+
+def test_calorie_summary_seven_day_average(tmp_path, sample_entries):
+    summary = get_calorie_summary(
+        start_date=date(2026, 10, 5),
+        end_date=date(2026, 10, 11),
+        data_dir=tmp_path,
+    )
+
+    assert summary["total_calories"] == 600
+    assert summary["average_daily_calories"] == 85.71
+
+
+def test_calorie_summary_by_category(tmp_path):
+    for description, calories, category in [
+        ("Oatmeal", 300, "grains"),
+        ("Pizza", 800, "fast_food"),
+        ("Rice", 200, "grains"),
+    ]:
+        add_entry(
+            EntryInput(
+                date="2026-10-11",
+                description=description,
+                calories=calories,
+                category=category,
+                tags=[],
+            ),
+            data_dir=tmp_path,
+        )
+
+    summary = get_calorie_summary(
+        start_date=date(2026, 10, 11),
+        end_date=date(2026, 10, 11),
+        data_dir=tmp_path,
+    )
+
+    assert summary["total_calories"] == 1300
+    assert summary["by_category"] == {
+        "fast_food": 800,
+        "grains": 500,
+    }
+
+
+def test_calorie_summary_empty_range(tmp_path):
+    summary = get_calorie_summary(
+        start_date=date(2026, 10, 1),
+        end_date=date(2026, 10, 3),
+        data_dir=tmp_path,
+    )
+
+    assert summary["total_calories"] == 0
+    assert summary["average_daily_calories"] == 0
+    assert summary["by_category"] == {}
+    assert len(summary["daily_totals"]) == 3
+    assert all(calories == 0 for calories in summary["daily_totals"].values())
+
+
+def test_calorie_summary_invalid_range(tmp_path):
+    with pytest.raises(ValueError, match="start_date"):
+        get_calorie_summary(
+            start_date=date(2026, 10, 11),
+            end_date=date(2026, 10, 1),
+            data_dir=tmp_path,
+        )

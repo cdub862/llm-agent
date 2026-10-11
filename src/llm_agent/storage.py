@@ -1,5 +1,6 @@
 import json
 from datetime import date as Date
+from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -158,3 +159,48 @@ def delete_entry(
             return deleted
 
     raise KeyError(f"Entry not found: {entry_id}")
+
+
+def get_calorie_summary(
+    *,
+    start_date: Date,
+    end_date: Date,
+    data_dir: Path = Path("data"),
+) -> dict:
+    if start_date > end_date:
+        raise ValueError("start_date cannot be after end_date")
+
+    days = (end_date - start_date).days + 1
+
+    daily_totals = {}
+
+    for offset in range(days):
+        day = start_date + timedelta(days=offset)
+        daily_totals[day.isoformat()] = 0
+
+    by_category = {}
+
+    entries = list_entries(
+        start_date=start_date,
+        end_date=end_date,
+        data_dir=data_dir,
+    )
+
+    for entry in entries:
+        calories = entry["calories"]
+        category = entry["category"]
+
+        daily_totals[entry["date"]] += calories
+
+        by_category[category] = by_category.get(category, 0) + calories
+
+    total_calories = sum(daily_totals.values())
+
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "total_calories": total_calories,
+        "average_daily_calories": round(total_calories / days, 2),
+        "daily_totals": daily_totals,
+        "by_category": dict(sorted(by_category.items())),
+    }
