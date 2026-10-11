@@ -46,3 +46,32 @@ class ListEntriesInput(BaseModel):
         default=None,
         description="Inclusive end date in YYYY-MM-DD format.",
     )
+
+
+class UpdateEntryToolInput(EntryUpdate):
+    model_config = ConfigDict(extra="forbid")
+
+    entry_id: str = Field(
+        min_length=1,
+        description="Entry ID obtained from list_entries.",
+    )
+
+
+class DeleteEntryToolInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry_id: str = Field(
+        min_length=1,
+        description="Entry ID obtained from list_entries.",
+    )
+
+
+class CalorieSummaryInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start_date: Date = Field(
+        description="Inclusive start date in YYYY-MM-DD format.",
+    )
+    end_date: Date = Field(
+        description="Inclusive end date in YYYY-MM-DD format.",
+    )
