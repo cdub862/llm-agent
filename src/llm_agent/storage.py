@@ -137,3 +137,24 @@ def update_entry(
             return updated_record
 
     raise KeyError(f"Entry not found: {entry_id}")
+
+
+def delete_entry(
+    entry_id: str,
+    *,
+    data_dir: Path = Path("data"),
+) -> dict:
+    for path in sorted(data_dir.glob("????-??.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+
+        for index, record in enumerate(data["entries"]):
+            if record["id"] != entry_id:
+                continue
+
+            deleted = data["entries"].pop(index)
+
+            _write_month(path, data)
+
+            return deleted
+
+    raise KeyError(f"Entry not found: {entry_id}")

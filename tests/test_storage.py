@@ -5,7 +5,12 @@ import pytest
 from pydantic import ValidationError
 
 from llm_agent.schemas import EntryInput, EntryUpdate
-from llm_agent.storage import add_entry, list_entries, update_entry
+from llm_agent.storage import (
+    add_entry,
+    delete_entry,
+    list_entries,
+    update_entry,
+)
 
 
 @pytest.fixture
@@ -256,3 +261,86 @@ def test_update_entry_rejects_null_fields(tmp_path):
             EntryUpdate(description=None),
             data_dir=tmp_path,
         )
+
+
+def test_delete_entry(tmp_path):
+    entry = add_entry(
+        EntryInput(
+            date="2026-10-11",
+            description="Oatmeal",
+            calories=300,
+            category="grains",
+            tags=["breakfast"],
+        ),
+        data_dir=tmp_path,
+    )
+
+    deleted = delete_entry(entry["id"], data_dir=tmp_path)
+
+    assert deleted == entry
+    assert list_entries(data_dir=tmp_path) == []
+
+    data = json.loads((tmp_path / "2026-10.json").read_text(encoding="utf-8"))
+
+    assert data["entries"] == []
+
+
+def test_delete_entry_preserves_other_entries(tmp_path):
+    first = add_entry(
+        EntryInput(
+            date="2026-10-11",
+            description="Oatmeal",
+            calories=300,
+            category="grains",
+            tags=[],
+        ),
+        data_dir=tmp_path,
+    )
+
+    second = add_entry(
+        EntryInput(
+            date="2026-10-11",
+            description="Pizza",
+            calories=800,
+            category="fast_food",
+            tags=[],
+        ),
+        data_dir=tmp_path,
+    )
+
+    delete_entry(first["id"], data_dir=tmp_path)
+
+    assert list_entries(data_dir=tmp_path) == [second]
+
+
+def test_delete_entry_not_found(tmp_path):
+    with pytest.raises(KeyError, match="Entry not found"):
+        delete_entry("unknown-id", data_dir=tmp_path)
+
+
+def test_delete_entry_does_not_modify_other_months(tmp_path):
+    september = add_entry(
+        EntryInput(
+            date="2026-09-30",
+            description="Oatmeal",
+            calories=300,
+            category="grains",
+            tags=[],
+        ),
+        data_dir=tmp_path,
+    )
+
+    october = add_entry(
+        EntryInput(
+            date="2026-10-11",
+            description="Pizza",
+            calories=800,
+            category="fast_food",
+            tags=[],
+        ),
+        data_dir=tmp_path,
+    )
+
+    delete_entry(october["id"], data_dir=tmp_path)
+
+    assert list_entries(data_dir=tmp_path) == [september]
