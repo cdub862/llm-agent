@@ -4,8 +4,8 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from llm_agent.schemas import EntryInput
-from llm_agent.storage import add_entry, list_entries
+from llm_agent.schemas import EntryInput, EntryUpdate
+from llm_agent.storage import add_entry, list_entries, update_entry
 
 
 @pytest.fixture
@@ -167,5 +167,92 @@ def test_list_entries_invalid_date_range(tmp_path):
         list_entries(
             start_date=date(2026, 10, 11),
             end_date=date(2026, 10, 1),
+            data_dir=tmp_path,
+        )
+
+
+def test_update_entry_changes_only_requested_fields(tmp_path):
+    original = add_entry(
+        EntryInput(
+            date="2026-10-11",
+            description="Oatmeal",
+            calories=300,
+            category="grains",
+            tags=["breakfast"],
+        ),
+        data_dir=tmp_path,
+    )
+
+    updated = update_entry(
+        original["id"],
+        EntryUpdate(calories=450),
+        data_dir=tmp_path,
+    )
+
+    assert updated["id"] == original["id"]
+    assert updated["calories"] == 450
+    assert updated["description"] == "Oatmeal"
+    assert updated["category"] == "grains"
+    assert updated["tags"] == ["breakfast"]
+
+    assert list_entries(data_dir=tmp_path) == [updated]
+
+
+def test_update_entry_moves_between_months(tmp_path):
+    original = add_entry(
+        EntryInput(
+            date="2026-09-30",
+            description="Pizza",
+            calories=800,
+            category="fast_food",
+            tags=[],
+        ),
+        data_dir=tmp_path,
+    )
+
+    updated = update_entry(
+        original["id"],
+        EntryUpdate(date="2026-10-01"),
+        data_dir=tmp_path,
+    )
+
+    assert updated["id"] == original["id"]
+    assert updated["date"] == "2026-10-01"
+
+    september = json.loads((tmp_path / "2026-09.json").read_text(encoding="utf-8"))
+    october = json.loads((tmp_path / "2026-10.json").read_text(encoding="utf-8"))
+
+    assert september["entries"] == []
+    assert october["entries"] == [updated]
+
+
+def test_update_entry_not_found(tmp_path):
+    with pytest.raises(KeyError, match="Entry not found"):
+        update_entry(
+            "unknown-id",
+            EntryUpdate(calories=500),
+            data_dir=tmp_path,
+        )
+
+
+def test_update_entry_rejects_invalid_values():
+    with pytest.raises(ValidationError):
+        EntryUpdate(calories=-100)
+
+
+def test_update_entry_rejects_empty_changes(tmp_path):
+    with pytest.raises(ValueError, match="No fields"):
+        update_entry(
+            "some-id",
+            EntryUpdate(),
+            data_dir=tmp_path,
+        )
+
+
+def test_update_entry_rejects_null_fields(tmp_path):
+    with pytest.raises(ValueError, match="cannot be null"):
+        update_entry(
+            "some-id",
+            EntryUpdate(description=None),
             data_dir=tmp_path,
         )

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date as Date
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -18,8 +18,16 @@ class FoodCategory(StrEnum):
 
 
 class EntryInput(BaseModel):
-    date: date
+    date: Date
     description: str = Field(min_length=1)
     calories: int = Field(ge=0, strict=True)
     category: FoodCategory
     tags: list[str]
+
+
+class EntryUpdate(BaseModel):
+    date: Date | None = None
+    description: str | None = Field(default=None, min_length=1)
+    calories: int | None = Field(default=None, ge=0, strict=True)
+    category: FoodCategory | None = None
+    tags: list[str] | None = None
