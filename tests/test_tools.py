@@ -4,7 +4,13 @@ import pytest
 from pydantic import ValidationError
 
 from llm_agent.schemas import EntryInput
-from llm_agent.tools import ADD_ENTRY_TOOL, add_entry_tool
+from llm_agent.tools import (
+    ADD_ENTRY_TOOL,
+    LIST_ENTRIES_TOOL,
+    ListEntriesInput,
+    add_entry_tool,
+    list_entries_tool,
+)
 
 
 def test_add_entry_tool_schema():
@@ -82,3 +88,43 @@ def test_add_entry_tool_rejects_unknown_fields(tmp_path, monkeypatch):
         )
 
     assert not (tmp_path / "data").exists()
+
+
+def test_list_entries_tool(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    add_entry_tool(
+        date="2026-10-11",
+        description="Oatmeal",
+        calories=300,
+        category="grains",
+        tags=["breakfast"],
+    )
+
+    add_entry_tool(
+        date="2026-10-10",
+        description="Pizza",
+        calories=800,
+        category="fast_food",
+        tags=[],
+    )
+
+    result = list_entries_tool(
+        start_date="2026-10-11",
+        end_date="2026-10-11",
+    )
+
+    assert len(result) == 1
+    assert result[0]["description"] == "Oatmeal"
+
+
+def test_list_entries_tool_schema():
+    assert (
+        LIST_ENTRIES_TOOL["function"]["parameters"]
+        == ListEntriesInput.model_json_schema()
+    )
+
+
+def test_list_entries_tool_invalid_date():
+    with pytest.raises(ValidationError):
+        list_entries_tool(start_date="invalid")
