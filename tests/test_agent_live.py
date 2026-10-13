@@ -15,7 +15,29 @@ from llm_agent.tools import HANDLERS, TOOLS
     os.getenv("RUN_LIVE_AGENT") != "1",
     reason="Live LLM evaluation is opt-in",
 )
-def test_live_qwen_add_and_summarize(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        pytest.param(
+            "Log 300 calories of oatmeal on 2026-10-11 "
+            "and tell me my total calories for that date.",
+            id="natural-direct",
+        ),
+        pytest.param(
+            "I ate 300 calories of oatmeal on 2026-10-11. "
+            "Record it and tell me how much I ate that day.",
+            id="natural-conversational",
+        ),
+        pytest.param(
+            "First call add_entry to log 300 calories of oatmeal "
+            "on 2026-10-11, category grains, tag breakfast. "
+            "Then call get_calorie_summary for that date. "
+            "Report the returned total.",
+            id="explicit-sequence",
+        ),
+    ],
+)
+def test_live_qwen_add_and_summarize(tmp_path, monkeypatch, prompt):
     monkeypatch.chdir(tmp_path)
 
     client = OpenAI(
@@ -50,25 +72,12 @@ def test_live_qwen_add_and_summarize(tmp_path, monkeypatch):
             },
             {
                 "role": "user",
-                "content": (
-                    "Perform these operations in order:\n"
-                    "1. Call add_entry to log 300 calories of oatmeal "
-                    "on 2026-10-11, category grains, tag breakfast.\n"
-                    "2. After add_entry succeeds, call get_calorie_summary "
-                    "for 2026-10-11.\n"
-                    "3. Report the total returned by get_calorie_summary. "
-                    "Do not calculate the total yourself."
-                ),
+                "content": prompt,
             },
         ],
         tools=TOOLS,
         handlers=handlers,
         max_steps=5,
-    )
-
-    print("Answer:", answer)
-    print(
-        "Tool calls:", {name: handler.call_count for name, handler in handlers.items()}
     )
 
     entries = list_entries(
