@@ -1,6 +1,7 @@
 import json
 from unittest.mock import Mock
 
+import pytest
 from openai.types.chat import ChatCompletion
 
 from llm_agent.agent import run_agent
@@ -216,3 +217,74 @@ def test_agent_recovers_from_invalid_arguments(tmp_path, monkeypatch):
     assert first_result["ok"] is False
     assert first_result["error"]["type"] == "invalid_tool_arguments"
     assert second_result["calories"] == 300
+
+
+def test_agent_stops_after_max_steps(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    client = Mock()
+
+    # Qwen repeatedly generates the same invalid tool call.
+    client.chat.completions.create.return_value = make_completion(
+        tool_name="add_entry",
+        arguments={
+            "date": "2026-10-11",
+            "description": "Oatmeal",
+            "calories": -100,
+            "category": "grains",
+            "tags": [],
+        },
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Agent exceeded maximum steps",
+    ):
+        run_agent(
+            client=client,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Log 300 calories of oatmeal.",
+                }
+            ],
+            tools=TOOLS,
+            handlers=HANDLERS,
+            max_steps=3,
+        )
+
+    assert client.chat.completions.create.call_count == 3
+
+    # No invalid entries should have been persisted.
+    assert not (tmp_path / "data" / "2026-10.json").exists()
+
+    # The last model request should contain the previous errors.
+    final_request = client.chat.completions.create.call_args_list[-1]
+    history = final_request.kwargs["messages"]
+
+    tool_results = [message for message in history if message["role"] == "tool"]
+
+    assert len(tool_results) == 3
+
+    for result in tool_results:
+        content = json.loads(result["content"])
+        assert content["ok"] is False
+        assert content["error"]["type"] == "invalid_tool_arguments"
+
+
+def test_agent_rejects_nonpositive_max_steps():
+    client = Mock()
+
+    with pytest.raises(
+        ValueError,
+        match="max_steps must be positive",
+    ):
+        run_agent(
+            client=client,
+            messages=[],
+            tools=TOOLS,
+            handlers=HANDLERS,
+            max_steps=0,
+        )
+
+    client.chat.completions.create.assert_not_called()
