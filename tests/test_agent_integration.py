@@ -1,7 +1,10 @@
 import json
 from unittest.mock import Mock
 
+import pytest
+from jsonschema import ValidationError as JSONSchemaValidationError
 from openai.types.chat import ChatCompletion
+from pydantic import ValidationError as PydanticValidationError
 
 from llm_agent.agent import run_agent
 from llm_agent.storage import list_entries
@@ -103,3 +106,36 @@ def test_agent_adds_entry_and_calculates_total(tmp_path, monkeypatch):
 
     assert summary["total_calories"] == 300
     assert history[-1]["tool_call_id"] == "call_get_calorie_summary"
+
+
+def test_agent_rejects_invalid_tool_arguments(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    client = Mock()
+    client.chat.completions.create.return_value = make_completion(
+        tool_name="add_entry",
+        arguments={
+            "date": "2026-10-11",
+            "description": "Oatmeal",
+            "calories": -100,
+            "category": "grains",
+            "tags": ["breakfast"],
+        },
+    )
+
+    with pytest.raises((PydanticValidationError, JSONSchemaValidationError)):
+        run_agent(
+            client=client,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Log -100 calories of oatmeal.",
+                }
+            ],
+            tools=TOOLS,
+            handlers=HANDLERS,
+            max_steps=5,
+        )
+
+    assert not (tmp_path / "data" / "2026-10.json").exists()
+    assert client.chat.completions.create.call_count == 1
