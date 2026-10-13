@@ -1,10 +1,7 @@
 import json
 from unittest.mock import Mock
 
-import pytest
-from jsonschema import ValidationError as JSONSchemaValidationError
 from openai.types.chat import ChatCompletion
-from pydantic import ValidationError as PydanticValidationError
 
 from llm_agent.agent import run_agent
 from llm_agent.storage import list_entries
@@ -112,30 +109,110 @@ def test_agent_rejects_invalid_tool_arguments(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     client = Mock()
-    client.chat.completions.create.return_value = make_completion(
-        tool_name="add_entry",
-        arguments={
-            "date": "2026-10-11",
-            "description": "Oatmeal",
-            "calories": -100,
-            "category": "grains",
-            "tags": ["breakfast"],
-        },
+    client.chat.completions.create.side_effect = [
+        make_completion(
+            tool_name="add_entry",
+            arguments={
+                "date": "2026-10-11",
+                "description": "Oatmeal",
+                "calories": -100,
+                "category": "grains",
+                "tags": ["breakfast"],
+            },
+        ),
+        make_completion(
+            content="I cannot log negative calories.",
+        ),
+    ]
+
+    answer = run_agent(
+        client=client,
+        messages=[
+            {
+                "role": "user",
+                "content": "Log -100 calories of oatmeal.",
+            }
+        ],
+        tools=TOOLS,
+        handlers=HANDLERS,
+        max_steps=5,
     )
 
-    with pytest.raises((PydanticValidationError, JSONSchemaValidationError)):
-        run_agent(
-            client=client,
-            messages=[
-                {
-                    "role": "user",
-                    "content": "Log -100 calories of oatmeal.",
-                }
-            ],
-            tools=TOOLS,
-            handlers=HANDLERS,
-            max_steps=5,
-        )
+    assert answer == "I cannot log negative calories."
+    assert client.chat.completions.create.call_count == 2
 
     assert not (tmp_path / "data" / "2026-10.json").exists()
-    assert client.chat.completions.create.call_count == 1
+
+    second_call = client.chat.completions.create.call_args_list[1]
+    history = second_call.kwargs["messages"]
+
+    error_result = json.loads(history[-1]["content"])
+
+    assert error_result["ok"] is False
+    assert error_result["error"]["type"] == "invalid_tool_arguments"
+
+
+def test_agent_recovers_from_invalid_arguments(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    client = Mock()
+    client.chat.completions.create.side_effect = [
+        make_completion(
+            tool_name="add_entry",
+            arguments={
+                "date": "2026-10-11",
+                "description": "Oatmeal",
+                "calories": -100,
+                "category": "grains",
+                "tags": [],
+            },
+        ),
+        make_completion(
+            tool_name="add_entry",
+            arguments={
+                "date": "2026-10-11",
+                "description": "Oatmeal",
+                "calories": 300,
+                "category": "grains",
+                "tags": [],
+            },
+        ),
+        make_completion(
+            content="Successfully logged 300 calories.",
+        ),
+    ]
+
+    answer = run_agent(
+        client=client,
+        messages=[
+            {
+                "role": "user",
+                "content": "Log 300 calories of oatmeal.",
+            }
+        ],
+        tools=TOOLS,
+        handlers=HANDLERS,
+        max_steps=5,
+    )
+
+    assert answer == "Successfully logged 300 calories."
+    assert client.chat.completions.create.call_count == 3
+
+    entries = list_entries(data_dir=tmp_path / "data")
+
+    assert len(entries) == 1
+    assert entries[0]["calories"] == 300
+
+    final_call = client.chat.completions.create.call_args_list[-1]
+    history = final_call.kwargs["messages"]
+
+    tool_results = [message for message in history if message["role"] == "tool"]
+
+    assert len(tool_results) == 2
+
+    first_result = json.loads(tool_results[0]["content"])
+    second_result = json.loads(tool_results[1]["content"])
+
+    assert first_result["ok"] is False
+    assert first_result["error"]["type"] == "invalid_tool_arguments"
+    assert second_result["calories"] == 300

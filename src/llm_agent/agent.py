@@ -1,7 +1,9 @@
 import json
 from collections.abc import Callable
 
+from jsonschema import ValidationError as JSONSchemaValidationError
 from openai import OpenAI
+from pydantic import ValidationError as PydanticValidationError
 
 from llm_agent.config import MODEL_ID
 from llm_agent.tool_validator import validate_tool_call
@@ -40,25 +42,43 @@ def run_agent(
         )
 
         for call in message.tool_calls:
-            parsed = {
-                "name": call.function.name,
-                "arguments": json.loads(call.function.arguments),
-            }
+            try:
+                parsed = {
+                    "name": call.function.name,
+                    "arguments": json.loads(call.function.arguments),
+                }
 
-            validate_tool_call(parsed, tools)
+                validate_tool_call(parsed, tools)
 
-            handler = handlers.get(parsed["name"])
+                handler = handlers.get(parsed["name"])
 
-            if handler is None:
-                raise ValueError(f"No handler registered for {parsed['name']}")
+                if handler is None:
+                    raise RuntimeError(f"No handler registered for {parsed['name']}")
 
-            result = handler(**parsed["arguments"])
+                result = handler(**parsed["arguments"])
+                content = json.dumps(result)
+
+            except (
+                json.JSONDecodeError,
+                JSONSchemaValidationError,
+                PydanticValidationError,
+                ValueError,
+            ) as exc:
+                content = json.dumps(
+                    {
+                        "ok": False,
+                        "error": {
+                            "type": "invalid_tool_arguments",
+                            "message": str(exc),
+                        },
+                    }
+                )
 
             history.append(
                 {
                     "role": "tool",
                     "tool_call_id": call.id,
-                    "content": json.dumps(result),
+                    "content": content,
                 }
             )
 
